@@ -136,6 +136,46 @@ async function executeQuery(databaseId: number, sql: string) {
   );
 }
 
+async function enrichPhones(rows: Record<string, string>[]) {
+  const tickets = rows.map((r) => Number(r.ticket_id)).filter(Boolean);
+  if (!tickets.length) return;
+
+  const ticketMap = new Map<number, { phone_number?: string; name?: string }>();
+  for (let i = 0; i < tickets.length; i += 80) {
+    const chunk = tickets.slice(i, i + 80);
+    const sql = `
+      SELECT DISTINCT ON (c.display_id)
+        c.display_id AS ticket_id,
+        ct.phone_number,
+        ct.name
+      FROM conversations c
+      JOIN contacts ct ON ct.id = c.contact_id AND ct.account_id = ${ACCOUNT_ID}
+      WHERE c.account_id = ${ACCOUNT_ID}
+        AND c.display_id IN (${chunk.join(", ")})
+      ORDER BY c.display_id, c.updated_at DESC
+    `;
+    try {
+      const data = await executeQuery(72, sql);
+      for (const row of data) {
+        ticketMap.set(Number(row.ticket_id), row);
+      }
+    } catch {
+      return;
+    }
+  }
+
+  for (const row of rows) {
+    const contact = ticketMap.get(Number(row.ticket_id));
+    if (!contact) continue;
+    if (!String(row.phone_number || "").trim() && contact.phone_number) {
+      row.phone_number = String(contact.phone_number);
+    }
+    if (!String(row.name || "").trim() && contact.name) {
+      row.name = String(contact.name);
+    }
+  }
+}
+
 function splitProjects(value?: string) {
   if (!value || value.trim() === "" || value.trim() === "-") return [] as string[];
   return value
@@ -293,6 +333,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const rows = await executeQuery(CLICKHOUSE_DATABASE_ID, userDetailSql(startDate, endDate));
+    await enrichPhones(rows);
     return res.status(200).json(buildReport(rows, startDate, endDate));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to generate report";

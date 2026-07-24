@@ -1,39 +1,40 @@
 # Runwal Bot Lead Tracker
 
-Dashboard for Runwal Enterprises (LimeChat account `28982`) with date filters.
+Date-filtered funnel dashboard for **Runwal Enterprises** (LimeChat account `28982`), matching the Bot Lead Tracker sheet.
 
-Matches the Bot Lead Tracker report structure:
-- Overall funnel summary
-- Stage mix / drop-off analysis
-- Project-wise interest breakdown
-- User-level detail
+Live app: [https://runwal-lead-tracker.vercel.app](https://runwal-lead-tracker.vercel.app)
+
+Repo: [namratapanga1207/runwal-lead-tracker](https://github.com/namratapanga1207/runwal-lead-tracker)
 
 ## Validation (Mar 10 – May 10, 2026)
 
-Against the shared sheet, live DB metrics match:
-
-| Metric | Sheet | Dashboard |
-|--------|------:|----------:|
+| Metric | Sheet | Live API |
+|--------|------:|---------:|
 | Total Conversations | 230 | 230 |
 | Unique Phone Numbers | 193 | 193 |
 | Leads Generated | 58 | 58 |
 | Callback Requested | 56 | 56 |
 | Leads Confirmed | 38 | 38 |
+| Lead Confirmed stage | 38 | 38 |
+| Requested Callback – Not Confirmed | 9 | 9 |
+| Lead Submitted – Dropped | 11 | 11 |
+| Callback Clicked – Dropped Mid-Form | 24 | 24 |
 
-## Stack
+Project browsed / no-action can differ by ~2 vs the sheet depending on how edge-case project selections are labeled.
 
-- **Frontend:** React + Vite (Vercel)
-- **Backend:** FastAPI (Render)
-- **Data:** Metabase native SQL over ClickHouse + HDT Postgres
+## Architecture
+
+- **Frontend (Vercel):** React dashboard with date filters, stage mix, project table, drop-off analysis, user detail
+- **API:** Metabase native SQL over ClickHouse conversations/messages (+ HDT contacts for phones)
+- **FastAPI service (`backend/`):** Ready for Render deployment (`render.yaml`)
 
 ## Local development
 
-### Backend
+### Backend (FastAPI)
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # set METABASE_API_KEY
 uvicorn app.main:app --reload --port 8000
@@ -50,21 +51,38 @@ npm run dev
 
 ## Deploy
 
-### Render (backend)
+### Vercel (frontend + API route)
 
-1. Create a Web Service from this repo, root directory `backend`
-2. Build: `pip install -r requirements.txt`
-3. Start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-4. Env vars:
+Already deployed. Env vars on the Vercel project:
+- `METABASE_URL`
+- `METABASE_API_KEY`
+- `ACCOUNT_ID=28982`
+- `CLICKHOUSE_DATABASE_ID=82`
+
+Optional: set `VITE_API_BASE_URL` to a Render API URL to point the UI at FastAPI instead of `/api/report`.
+
+### Render (FastAPI backend)
+
+1. Open Blueprint deploy:  
+   [https://dashboard.render.com/blueprint/new?repo=https://github.com/namratapanga1207/runwal-lead-tracker](https://dashboard.render.com/blueprint/new?repo=https://github.com/namratapanga1207/runwal-lead-tracker)
+2. Set env vars:
    - `METABASE_URL=https://metabase.limechat.ai`
-   - `METABASE_API_KEY=...`
-   - `CORS_ORIGINS=https://<your-vercel-app>.vercel.app`
+   - `METABASE_API_KEY=<your key>`
+   - `CORS_ORIGINS=https://runwal-lead-tracker.vercel.app`
+3. After deploy, set Vercel `VITE_API_BASE_URL` to `https://<render-service>.onrender.com` and redeploy the frontend.
 
-### Vercel (frontend)
+Or with Render CLI (after `render login`):
 
 ```bash
-cd frontend
-vercel --prod
+render blueprints validate ./render.yaml
+# then deploy blueprint from the dashboard linked to this repo
 ```
 
-Set `VITE_API_BASE_URL` to the Render service URL.
+## Data definitions
+
+Funnel stages are derived from bot messages for account `28982`:
+
+- **Project browsed:** inbound project list selection
+- **Callback requested:** inbound `Request A Call Back`
+- **Lead submitted:** bot verification message containing `Interested project:`
+- **Lead confirmed:** bot message containing `successfully registered`
