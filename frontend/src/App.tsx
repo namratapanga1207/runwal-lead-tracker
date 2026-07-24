@@ -69,7 +69,7 @@ type Report = {
   users: UserRow[];
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 const STAGE_COLORS: Record<string, string> = {
   "Lead Confirmed": "#1f7a4d",
