@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: runwal-lead-tracker-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: METABASE_URL
+        sync: false
+      - key: METABASE_API_KEY
+        sync: false
+      - key: ACCOUNT_ID
+        value: "28982"
+      - key: CLICKHOUSE_DATABASE_ID
+        value: "82"
+      - key: CORS_ORIGINS
+        sync: false
