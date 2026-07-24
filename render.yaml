@@ -3,11 +3,12 @@ services:
     name: runwal-lead-tracker-api
     runtime: python
     rootDir: backend
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: METABASE_URL
-        sync: false
+        value: https://metabase.limechat.ai
       - key: METABASE_API_KEY
         sync: false
       - key: ACCOUNT_ID
