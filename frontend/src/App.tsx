@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Legend,
+  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -49,6 +54,7 @@ type Report = {
   website: string;
   start_date: string;
   end_date: string;
+  source?: string;
   funnel: {
     total_conversations: number;
     unique_phone_numbers: number;
@@ -66,6 +72,20 @@ type Report = {
     lead_confirmed: number;
   };
   dropoffs: StageRow[];
+  daily_trend?: Array<{
+    date: string;
+    conversations: number;
+    leads: number;
+    callbacks: number;
+    confirmed: number;
+  }>;
+  conversion?: {
+    lead_rate: number;
+    callback_rate: number;
+    confirm_rate: number;
+    confirm_from_leads: number;
+    callback_from_leads: number;
+  };
   users: UserRow[];
 };
 
@@ -118,7 +138,6 @@ export default function App() {
 
   useEffect(() => {
     void loadReport();
-    // initial load only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -127,6 +146,16 @@ export default function App() {
     if (stageFilter === "All") return report.users;
     return report.users.filter((u) => u.stage === stageFilter);
   }, [report, stageFilter]);
+
+  const funnelBars = useMemo(() => {
+    if (!report) return [];
+    return [
+      { step: "Conversations", value: report.funnel.total_conversations },
+      { step: "Leads Generated", value: report.funnel.leads_generated },
+      { step: "Callback Requested", value: report.funnel.callback_requested },
+      { step: "Leads Confirmed", value: report.funnel.leads_confirmed },
+    ];
+  }, [report]);
 
   return (
     <div className="page">
@@ -140,6 +169,7 @@ export default function App() {
             <a href="https://runwalenterprises.com/" target="_blank" rel="noreferrer">
               runwalenterprises.com
             </a>
+            {report?.source === "spreadsheet_canonical" ? " · Matched to spreadsheet" : ""}
           </p>
         </div>
         <form
@@ -193,6 +223,15 @@ export default function App() {
                 <Kpi label="No Action" value={report.funnel.no_action} muted />
               </section>
 
+              {report.conversion && (
+                <section className="kpi-grid conversion-grid">
+                  <Kpi label="Lead Rate" value={report.conversion.lead_rate} suffix="%" />
+                  <Kpi label="Callback Rate" value={report.conversion.callback_rate} suffix="%" />
+                  <Kpi label="Confirm Rate" value={report.conversion.confirm_rate} suffix="%" />
+                  <Kpi label="Confirm / Leads" value={report.conversion.confirm_from_leads} suffix="%" />
+                </section>
+              )}
+
               <section className="panel-grid">
                 <article className="panel">
                   <h3>Stage Mix</h3>
@@ -231,16 +270,92 @@ export default function App() {
                 </article>
 
                 <article className="panel">
-                  <h3>Project Interest</h3>
+                  <h3>Conversion Funnel</h3>
                   <div className="chart-wrap">
                     <ResponsiveContainer width="100%" height={320}>
-                      <BarChart data={report.projects} layout="vertical" margin={{ left: 24, right: 12 }}>
+                      <BarChart data={funnelBars} margin={{ left: 8, right: 12, top: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="step" tick={{ fontSize: 12 }} />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="value" name="Count" fill="#0f4c5c" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </article>
+              </section>
+
+              {report.daily_trend && report.daily_trend.length > 0 && (
+                <section className="panel">
+                  <h3>Daily Trend</h3>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={300}>
+                      <AreaChart data={report.daily_trend} margin={{ left: 8, right: 12, top: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="date" tick={{ fontSize: 11 }} minTickGap={24} />
+                        <YAxis />
+                        <Tooltip />
+                        <Legend />
+                        <Area
+                          type="monotone"
+                          dataKey="conversations"
+                          name="Conversations"
+                          stroke="#0f4c5c"
+                          fill="rgba(15,76,92,0.18)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="leads"
+                          name="Leads"
+                          stroke="#c45c26"
+                          fill="rgba(196,92,38,0.16)"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="confirmed"
+                          name="Confirmed"
+                          stroke="#1f7a4d"
+                          fill="rgba(31,122,77,0.16)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+              )}
+
+              <section className="panel-grid">
+                <article className="panel">
+                  <h3>Project Interest</h3>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={360}>
+                      <ComposedChart data={report.projects} layout="vertical" margin={{ left: 24, right: 12 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis type="number" />
                         <YAxis type="category" dataKey="project" width={140} tick={{ fontSize: 12 }} />
                         <Tooltip />
-                        <Bar dataKey="total_clicks" name="Project Clicks" fill="#0f4c5c" radius={[0, 4, 4, 0]} />
-                        <Bar dataKey="lead_confirmed" name="Confirmed" fill="#1f7a4d" radius={[0, 4, 4, 0]} />
+                        <Legend />
+                        <Bar dataKey="total_clicks" name="Clicks" fill="#0f4c5c" radius={[0, 4, 4, 0]} />
+                        <Bar dataKey="leads_generated" name="Leads" fill="#c45c26" radius={[0, 4, 4, 0]} />
+                        <Line dataKey="lead_confirmed" name="Confirmed" stroke="#1f7a4d" strokeWidth={2} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </article>
+
+                <article className="panel">
+                  <h3>Lead Confirm Rate by Project</h3>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={360}>
+                      <BarChart
+                        data={report.projects.filter((p) => p.lead_confirm_rate != null)}
+                        layout="vertical"
+                        margin={{ left: 24, right: 12 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis type="number" domain={[0, 100]} unit="%" />
+                        <YAxis type="category" dataKey="project" width={140} tick={{ fontSize: 12 }} />
+                        <Tooltip formatter={(v) => [`${v}%`, "Confirm Rate"]} />
+                        <Bar dataKey="lead_confirm_rate" name="Confirm Rate" fill="#1f7a4d" radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -282,8 +397,8 @@ export default function App() {
                         <td>TOTAL</td>
                         <td>{report.project_totals.total_clicks}</td>
                         <td>{report.project_totals.leads_generated}</td>
-                        <td>{report.funnel.callback_requested}</td>
-                        <td>{report.funnel.leads_confirmed}</td>
+                        <td>{report.project_totals.callback_requested}</td>
+                        <td>{report.project_totals.lead_confirmed}</td>
                         <td colSpan={3} />
                       </tr>
                     </tfoot>
@@ -291,30 +406,51 @@ export default function App() {
                 </div>
               </section>
 
-              <section className="panel">
-                <h3>Drop-off Analysis</h3>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Drop Stage</th>
-                        <th>Count</th>
-                        <th>% of Total</th>
-                        <th>What it means</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {report.dropoffs.map((d) => (
-                        <tr key={d.stage}>
-                          <td>{d.stage}</td>
-                          <td>{d.users}</td>
-                          <td>{d.pct_of_total}%</td>
-                          <td className="meaning">{d.meaning}</td>
+              <section className="panel-grid">
+                <article className="panel">
+                  <h3>Drop-off Analysis</h3>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Drop Stage</th>
+                          <th>Count</th>
+                          <th>% of Total</th>
+                          <th>What it means</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {report.dropoffs.map((d) => (
+                          <tr key={d.stage}>
+                            <td>{d.stage}</td>
+                            <td>{d.users}</td>
+                            <td>{d.pct_of_total}%</td>
+                            <td className="meaning">{d.meaning}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+
+                <article className="panel">
+                  <h3>Drop-off Volume</h3>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={report.dropoffs} layout="vertical" margin={{ left: 8, right: 12 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis type="number" />
+                        <YAxis type="category" dataKey="stage" width={170} tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Bar dataKey="users" name="Users" radius={[0, 4, 4, 0]}>
+                          {report.dropoffs.map((d) => (
+                            <Cell key={d.stage} fill={STAGE_COLORS[d.stage] || "#64748b"} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </article>
               </section>
             </>
           ) : (
@@ -384,16 +520,21 @@ function Kpi({
   value,
   accent,
   muted,
+  suffix = "",
 }: {
   label: string;
   value: number;
   accent?: boolean;
   muted?: boolean;
+  suffix?: string;
 }) {
   return (
     <div className={`kpi ${accent ? "accent" : ""} ${muted ? "muted" : ""}`}>
       <span>{label}</span>
-      <strong>{value.toLocaleString("en-IN")}</strong>
+      <strong>
+        {value.toLocaleString("en-IN")}
+        {suffix}
+      </strong>
     </div>
   );
 }
