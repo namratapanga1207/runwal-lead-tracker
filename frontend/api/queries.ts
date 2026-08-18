@@ -1,63 +1,65 @@
-PROJECTS = [
-    "7 Mahalaxmi",
-    "Runwal Garden City",
-    "Runwal Forests",
-    "Runwal Pinnacle",
-    "Codename Forevergreen",
-    "Runwal Woods",
-    "Runwal Avenue",
-    "Runwal Bliss",
-    "Fifth Avenue",
-    "Runwal City Center",
-    "Runwal City Centre",
-]
+export const PROJECT_ORDER = [
+  "7 Mahalaxmi",
+  "Runwal Garden City",
+  "Runwal Forests",
+  "Runwal Pinnacle",
+  "Codename Forevergreen",
+  "Runwal Woods",
+  "Runwal Avenue",
+  "Runwal Bliss",
+  "Fifth Avenue",
+  "Runwal City Center",
+];
 
-# Case-insensitive aliases used for browse detection in live SQL
-PROJECT_ALIAS_PATTERNS = [
-    ("7 mahalaxmi", "7 Mahalaxmi"),
-    ("runwal garden city", "Runwal Garden City"),
-    ("runwal forests", "Runwal Forests"),
-    ("runwal forest", "Runwal Forests"),
-    ("runwal pinnacle", "Runwal Pinnacle"),
-    ("codename forevergreen", "Codename Forevergreen"),
-    ("runwal woods", "Runwal Woods"),
-    ("runwal avenue", "Runwal Avenue"),
-    ("runwal bliss", "Runwal Bliss"),
-    ("fifth avenue", "Fifth Avenue"),
-    ("runwal city center", "Runwal City Center"),
-    ("runwal city centre", "Runwal City Center"),
-]
+const PROJECTS = [...PROJECT_ORDER, "Runwal City Centre"];
 
-PROJECT_LIST_SQL = ", ".join(f"'{p}'" for p in PROJECTS)
-PROJECT_LOWER_SQL = ", ".join(f"'{p.lower()}'" for p in PROJECTS)
+const PROJECT_ALIAS_PATTERNS: Array<[string, string]> = [
+  ["7 mahalaxmi", "7 Mahalaxmi"],
+  ["runwal garden city", "Runwal Garden City"],
+  ["runwal forests", "Runwal Forests"],
+  ["runwal forest", "Runwal Forests"],
+  ["runwal pinnacle", "Runwal Pinnacle"],
+  ["codename forevergreen", "Codename Forevergreen"],
+  ["runwal woods", "Runwal Woods"],
+  ["runwal avenue", "Runwal Avenue"],
+  ["runwal bliss", "Runwal Bliss"],
+  ["fifth avenue", "Fifth Avenue"],
+  ["runwal city center", "Runwal City Center"],
+  ["runwal city centre", "Runwal City Center"],
+];
 
-STAGE_DEFINITIONS = {
-    "Lead Confirmed": "Form submitted + system confirmed callback registration — fully qualified lead",
-    "Requested Callback – Not Confirmed": "Filled form + clicked callback button, but system confirmation not triggered",
-    "Lead Submitted – Dropped": "Form submitted (gave name/number/budget/config) but never clicked callback button",
-    "Callback Clicked – Dropped Mid-Form": 'Clicked "Request A Call Back" but dropped before completing form details',
-    "Project Browsed – Dropped": "Selected a project but took no further action — no callback, no form",
-    "No Action": "No project interaction — job seekers, vendors, existing buyers, off-topic",
+export const PROJECT_ALIASES: Record<string, string> = Object.fromEntries(PROJECT_ALIAS_PATTERNS);
+
+export const STAGE_DEFINITIONS: Record<string, string> = {
+  "Lead Confirmed": "Form submitted + system confirmed callback registration — fully qualified lead",
+  "Requested Callback – Not Confirmed": "Filled form + clicked callback button, but system confirmation not triggered",
+  "Lead Submitted – Dropped": "Form submitted (gave name/number/budget/config) but never clicked callback button",
+  "Callback Clicked – Dropped Mid-Form": 'Clicked "Request A Call Back" but dropped before completing form details',
+  "Project Browsed – Dropped": "Selected a project but took no further action — no callback, no form",
+  "No Action": "No project interaction — job seekers, vendors, existing buyers, off-topic",
+};
+
+function normalizeExpr(contentExpr: string) {
+  return (
+    "multiIf(" +
+    PROJECT_ALIAS_PATTERNS.map(
+      ([alias, canonical]) => `positionCaseInsensitive(${contentExpr}, '${alias}') > 0, '${canonical}'`,
+    ).join(", ") +
+    ", NULL)"
+  );
 }
 
+export function userDetailSql(accountId: number, startDate: string, endDate: string) {
+  const projectListSql = PROJECTS.map((p) => `'${p}'`).join(", ");
+  const projectLowerSql = PROJECTS.map((p) => `'${p.toLowerCase()}'`).join(", ");
+  const normalizeInbound = normalizeExpr("content");
 
-def _normalize_expr(content_expr: str) -> str:
-    """ClickHouse expression mapping free-text / casing variants to canonical project names."""
-    return "multiIf(" + ", ".join(
-        f"positionCaseInsensitive({content_expr}, '{alias}') > 0, '{canonical}'"
-        for alias, canonical in PROJECT_ALIAS_PATTERNS
-    ) + ", NULL)"
-
-
-def user_detail_sql(account_id: int, start_date: str, end_date: str) -> str:
-    """Return one row per conversation with funnel flags and project lists."""
-    normalize_inbound = _normalize_expr("content")
-    return f"""
+  return `
 WITH
 params AS (
   SELECT
-    toDateTime('{start_date} 00:00:00') AS start_ts,
-    toDateTime(addDays(toDate('{end_date}'), 1)) AS end_ts
+    toDateTime('${startDate} 00:00:00') AS start_ts,
+    toDateTime(addDays(toDate('${endDate}'), 1)) AS end_ts
 ),
 convs AS (
   SELECT
@@ -67,7 +69,7 @@ convs AS (
     created_at,
     row_number() OVER (PARTITION BY display_id ORDER BY updated_at DESC, id DESC) AS rn
   FROM datawarehouse.postgres_conv_conversations
-  WHERE account_id = {account_id}
+  WHERE account_id = ${accountId}
     AND created_at >= (SELECT start_ts FROM params)
     AND created_at < (SELECT end_ts FROM params)
 ),
@@ -84,7 +86,7 @@ msgs AS (
     m.created_at
   FROM datawarehouse.postgres_hd_messages m
   INNER JOIN uniq_convs c ON c.id = m.conversation_id
-  WHERE m.account_id = {account_id}
+  WHERE m.account_id = ${accountId}
 ),
 browse_events AS (
   SELECT
@@ -92,8 +94,8 @@ browse_events AS (
     arrayDistinct(groupArray(
       multiIf(
         message_type = 0 AND (
-          content IN ({PROJECT_LIST_SQL})
-          OR lowerUTF8(trim(BOTH ' ' FROM content)) IN ({PROJECT_LOWER_SQL})
+          content IN (${projectListSql})
+          OR lowerUTF8(trim(BOTH ' ' FROM content)) IN (${projectLowerSql})
           OR (
             length(content) <= 40
             AND (
@@ -112,7 +114,7 @@ browse_events AS (
             )
           )
         ),
-        {normalize_inbound},
+        ${normalizeInbound},
         NULL
       )
     )) AS projects
@@ -176,4 +178,5 @@ LEFT JOIN flags f ON c.id = f.conversation_id
 LEFT JOIN browse_events b ON c.id = b.conversation_id
 LEFT JOIN lead_events l ON c.id = l.conversation_id
 ORDER BY c.display_id
-"""
+`;
+}

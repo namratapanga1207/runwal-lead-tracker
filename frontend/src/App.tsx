@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Area,
   AreaChart,
@@ -6,9 +6,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  ComposedChart,
   Legend,
-  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -16,6 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import * as XLSX from "xlsx";
 import "./App.css";
 
 type StageRow = {
@@ -90,6 +89,8 @@ type Report = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+const DASHBOARD_PASSWORD = "L!M3CH@T4767";
+const AUTH_STORAGE_KEY = "runwal_dashboard_auth";
 
 const STAGE_COLORS: Record<string, string> = {
   "Lead Confirmed": "#1f7a4d",
@@ -108,6 +109,11 @@ function formatRange(start: string, end: string) {
 }
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(
+    () => sessionStorage.getItem(AUTH_STORAGE_KEY) === "1",
+  );
+  const [passwordInput, setPasswordInput] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
   const [startDate, setStartDate] = useState("2026-03-10");
   const [endDate, setEndDate] = useState("2026-05-10");
   const [report, setReport] = useState<Report | null>(null);
@@ -122,6 +128,9 @@ export default function App() {
     try {
       const res = await fetch(
         `${API_BASE}/api/report?start_date=${nextStart}&end_date=${nextEnd}`,
+        {
+          headers: { "x-dashboard-password": DASHBOARD_PASSWORD },
+        },
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -136,16 +145,51 @@ export default function App() {
     }
   }
 
+  function handleUnlock(e: FormEvent) {
+    e.preventDefault();
+    if (passwordInput === DASHBOARD_PASSWORD) {
+      sessionStorage.setItem(AUTH_STORAGE_KEY, "1");
+      setAuthenticated(true);
+      setAuthError(null);
+      setPasswordInput("");
+      return;
+    }
+    setAuthError("Incorrect password");
+  }
+
   useEffect(() => {
+    if (!authenticated) return;
     void loadReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authenticated]);
 
   const filteredUsers = useMemo(() => {
     if (!report) return [];
     if (stageFilter === "All") return report.users;
     return report.users.filter((u) => u.stage === stageFilter);
   }, [report, stageFilter]);
+
+  function downloadUsersExcel() {
+    if (!report || !filteredUsers.length) return;
+    const rows = filteredUsers.map((u) => ({
+      Ticket: u.ticket_id,
+      Date: u.date,
+      Name: u.name || "",
+      Phone: u.phone_number || "",
+      "Projects Browsed": u.projects_browsed,
+      "Lead Project": u.lead_projects,
+      Lead: u.lead_submitted,
+      Callback: u.callback_requested,
+      Confirmed: u.callback_confirmed,
+      Stage: u.stage,
+    }));
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "User Detail");
+    const stagePart = stageFilter === "All" ? "all" : stageFilter.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase();
+    const filename = `runwal-user-detail_${report.start_date}_to_${report.end_date}_${stagePart}.xlsx`;
+    XLSX.writeFile(book, filename);
+  }
 
   const funnelBars = useMemo(() => {
     if (!report) return [];
@@ -156,6 +200,34 @@ export default function App() {
       { step: "Leads Confirmed", value: report.funnel.leads_confirmed },
     ];
   }, [report]);
+
+  if (!authenticated) {
+    return (
+      <div className="page auth-page">
+        <div className="atmosphere" aria-hidden />
+        <form className="auth-card" onSubmit={handleUnlock}>
+          <p className="eyebrow">Bot Lead Tracker</p>
+          <h1>Runwal Enterprises</h1>
+          <p className="subtitle">Enter the password to open this dashboard.</p>
+          <label>
+            Password
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={(e) => {
+                setPasswordInput(e.target.value);
+                if (authError) setAuthError(null);
+              }}
+              autoFocus
+              autoComplete="current-password"
+            />
+          </label>
+          {authError && <p className="auth-error">{authError}</p>}
+          <button type="submit">Unlock</button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -169,7 +241,6 @@ export default function App() {
             <a href="https://runwalenterprises.com/" target="_blank" rel="noreferrer">
               runwalenterprises.com
             </a>
-            {report?.source === "spreadsheet_canonical" ? " · Matched to spreadsheet" : ""}
           </p>
         </div>
         <form
@@ -328,7 +399,7 @@ export default function App() {
                   <h3>Project Interest</h3>
                   <div className="chart-wrap">
                     <ResponsiveContainer width="100%" height={360}>
-                      <ComposedChart data={report.projects} layout="vertical" margin={{ left: 24, right: 12 }}>
+                      <BarChart data={report.projects} layout="vertical" margin={{ left: 24, right: 12 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis type="number" />
                         <YAxis type="category" dataKey="project" width={140} tick={{ fontSize: 12 }} />
@@ -336,8 +407,8 @@ export default function App() {
                         <Legend />
                         <Bar dataKey="total_clicks" name="Clicks" fill="#0f4c5c" radius={[0, 4, 4, 0]} />
                         <Bar dataKey="leads_generated" name="Leads" fill="#c45c26" radius={[0, 4, 4, 0]} />
-                        <Line dataKey="lead_confirmed" name="Confirmed" stroke="#1f7a4d" strokeWidth={2} />
-                      </ComposedChart>
+                        <Bar dataKey="lead_confirmed" name="Confirmed" fill="#1f7a4d" radius={[0, 4, 4, 0]} />
+                      </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </article>
@@ -457,15 +528,25 @@ export default function App() {
             <section className="panel">
               <div className="users-toolbar">
                 <h3>All User Actions ({filteredUsers.length})</h3>
-                <label>
-                  Stage
-                  <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
-                    <option>All</option>
-                    {report.stages.map((s) => (
-                      <option key={s.stage}>{s.stage}</option>
-                    ))}
-                  </select>
-                </label>
+                <div className="users-toolbar-actions">
+                  <label>
+                    Stage
+                    <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+                      <option>All</option>
+                      {report.stages.map((s) => (
+                        <option key={s.stage}>{s.stage}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="download-btn"
+                    onClick={downloadUsersExcel}
+                    disabled={!filteredUsers.length}
+                  >
+                    Download Excel
+                  </button>
+                </div>
               </div>
               <div className="table-wrap">
                 <table>
