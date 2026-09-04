@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
@@ -31,7 +31,10 @@ async def health():
 async def report(
     start_date: str = Query(..., description="YYYY-MM-DD"),
     end_date: str = Query(..., description="YYYY-MM-DD"),
+    x_dashboard_password: str | None = Header(default=None, alias="x-dashboard-password"),
 ):
+    if x_dashboard_password != settings.dashboard_password:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     try:
         return await generate_report(start_date, end_date)
     except ValueError as exc:

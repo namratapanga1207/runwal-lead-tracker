@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     clickhouse_database_id: int = 82
     account_id: int = 28982
     cors_origins: str = "*"
+    dashboard_password: str = "L!M3CH@T4767"
 
 
 settings = Settings()
